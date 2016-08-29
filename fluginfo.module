@@ -1,0 +1,205 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: drupalviking
+ * Date: 24/08/16
+ * Time: 11:59
+ */
+
+function fluginfo_menu(){
+  $items['vedurspa/flug/keflavik/koma'] = [
+    'title' => 'Komutímar flugs á Keflavíkurflugvelli',
+    'description' => t('Displays arrival times at Keflavik airport'),
+    'page callback' => 'fluginfo_kef_airport_arrivals',
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  ];
+
+  $items['vedurspa/flug/keflavik/brottfor'] = [
+    'title' => 'Brottfarartímar flugs á Keflavíkurflugvelli',
+    'description' => t('Displays departure times at Keflavik airport'),
+    'page callback' => 'fluginfo_kef_airport_departure',
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  ];
+
+  $items['vedurspa/flug/innanlands/brottfor'] = [
+    'title' => 'Brottfarartímar flugs á hinum ýmsu innanlandsvöllum',
+    'description' => t('Displays departure times at domestic airports in Iceland'),
+    'page callback' => 'fluginfo_kef_airport_departure',
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  ];
+
+  return $items;
+}
+
+function fluginfo_kef_airport_arrivals(){
+  $airport = _fluginfo_get_airport_info('KEF');
+  $arrival_info = json_decode($airport->field_komuupplysingar[LANGUAGE_NONE][0]['value']);
+
+  $table = _fluginfo_create_arrival_table_from_flight_info($arrival_info);
+
+  $build = [
+    'table' => [
+      '#type' => 'markup',
+      '#markup' => $table
+    ]
+  ];
+
+  return $build;
+}
+
+function fluginfo_kef_airport_departure(){
+  $airport = _fluginfo_get_airport_info('KEF');
+  $departure_info = json_decode($airport->field_brottfararupplysingar[LANGUAGE_NONE][0]['value']);
+
+  $table = _fluginfo_create_departure_table_from_flight_info($departure_info);
+
+  $build = [
+    'table' => [
+      '#type' => 'markup',
+      '#markup' => $table
+    ]
+  ];
+
+  return $build;
+}
+
+/** ////////////////////////////////////////////
+ *  HELPER FUNCTIONS
+ * /////////////////////////////////////////////
+ */
+
+/**
+ * Creates a table from flight info, aquired by json feeds
+ *
+ * @param $info
+ * @return string
+ * @throws \Exception
+ */
+function _fluginfo_create_arrival_table_from_flight_info($info){
+  $header = ['Flugfélag', 'Flugnúmer', 'Frá', 'Áætlun', 'Rauntími'];
+  foreach($info->results as $item){
+    $rows[] = [
+      'data' => [
+        '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
+        $item->flightNumber,
+        $item->from,
+        $item->plannedArrival,
+        $item->realArrival
+      ],
+      'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
+    ];
+  }
+
+  return theme('table', array('header' => $header, 'rows' => $rows));
+}
+
+/**
+ * Creates a table from flight info, aquired by json feeds
+ *
+ * @param $info
+ * @return string
+ * @throws \Exception
+ */
+function _fluginfo_create_departure_table_from_flight_info($info){
+  $header = ['Flugfélag', 'Flugnúmer', 'Til', 'Áætlun', 'Rauntími'];
+  foreach($info->results as $item){
+    $rows[] = [
+      'data' => [
+        '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
+        $item->flightNumber,
+        $item->to,
+        $item->plannedArrival,
+        $item->realArrival
+      ],
+      'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
+    ];
+  }
+
+  return theme('table', array('header' => $header, 'rows' => $rows));
+}
+
+function _fluginfo_classify_airline_name($name){
+  return str_replace( ['(', ')', '.'], '', (str_replace( [' '], '_', strtolower($name))));
+}
+
+function _fluginfo_classify_time($planned_arrival, $real_arrival){
+  $class = [];
+  if(!$real_arrival){
+    return $class;
+  }
+
+  $string = (is_numeric(substr($real_arrival, -5, 1)))
+    ? trim(substr($real_arrival, 0, strlen($real_arrival) -6))
+    : $real_arrival;
+
+  $string_real_arrival_time = substr($real_arrival, -5);
+
+  $computed_planned_arrival = (is_numeric(substr($real_arrival, -5, 1)))
+    ? strtotime($planned_arrival)
+    : null;
+  $computed_real_arrival = strtotime($string_real_arrival_time);
+
+  switch($string){
+    case "Lent" :
+      $class[] = 'landed';
+      break;
+    case "Staðfest" :
+      $class[] = 'confirmed';
+      break;
+    case "Áætluð" :
+      $class[] = 'estimated';
+      break;
+    case "Farin" :
+      $class[] = 'departured';
+      break;
+    case "&#xC1; &#xE1;&#xE6;tlun" :
+      $class[] = 'on-schedule';
+      break;
+    case "Hli&#xF0;i loka&#xF0;" :
+      $class[] = 'gate-closed';
+      break;
+    case "Fara a&#xF0; hli&#xF0;i" :
+      $class[] = 'go-to-gate';
+      break;
+    case "Athugun" :
+      $class[] = 'go-to-gate';
+      break;
+  }
+
+  if($computed_real_arrival){
+    $class[] = ($computed_real_arrival <= $computed_planned_arrival) ? 'on-time' : 'delayed';
+  }
+
+  return $class;
+}
+
+/**
+ * Finds an airport, based on it's airport code
+ *
+ * @param $airport_code
+ * @return stdClass|null
+ */
+function _fluginfo_get_airport_info($airport_code){
+  $results = null;
+  $query = new EntityFieldQuery;
+  $result = $query
+    ->entityCondition('entity_type', 'node')
+    ->propertyCondition('type', 'flugupplysingar')
+    ->propertyCondition('status', 1, '=')
+    ->fieldCondition('field_flugvollur', 'value', $airport_code, '=')
+    ->execute();
+
+  if (!empty($result['node'])) {
+    $results = entity_load('node', array_keys($result['node']));
+    $results = array_values($results);
+    $results = $results[0];
+  }
+
+  return $results;
+}

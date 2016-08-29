@@ -1,0 +1,4 @@
+name = Flugupplýsingar
+description = API to handle data from Isavia and Flugfélag Íslands
+core = 7.x
+package = RUV

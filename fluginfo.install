@@ -1,0 +1,152 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the trails module
+ *
+ * Download the schema module to auto-generate a schema array for a table:
+ * http://drupal.org/project/schema.
+ *
+ * In this file, we grab the output from the schema 'info' page, paste it
+ * in here and update the descriptions.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function fluginfo_install() {
+  _fluginfo_create_flight_info_content_type();
+}
+
+/**
+ * Implements hook_enable
+ */
+function fluginfo_enable() {
+  //_fluginfo_create_flight_info_content_type();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function fluginfo_uninstall() {
+  _fluginfo_remove_content_type(['flugupplysingar']);
+}
+
+/**
+ * Implements hook_disable
+ */
+function fluginfo_disable(){
+  //_fluginfo_remove_content_type(['flugupplysingar']);
+}
+
+function _fluginfo_create_flight_info_content_type(){
+  //CODE FROM THE DRUPAL WATCHDOG:  https://www.drupalwatchdog.com/volume-3/issue-2/drupal-7-content-types-code
+  //  The machine name of the content type can contain only lowercase alphanumeric
+  //  characters and underscores.
+  $type_name = 'flugupplysingar';
+
+  //  Verify the content type does not already exist. To instead get the node types
+  //  as objects, use node_type_get_types().
+  if ( in_array( $type_name, node_type_get_names() ) ) {
+    return;
+  }
+
+  //  Create the type definition array.
+  $type = array(
+    'type' => $type_name,
+    'name' => t( 'Flugupplýsingar' ),
+    'base' => 'node_content',
+    'description' => t( 'Geymir upplýsingar um komur og brottfaratíma flugvéla í flugstjórnarsvæði Isavia' ),
+    'custom' => 1,
+    'modified' => 1,
+    'locked' => 0,
+  );
+  $type = node_type_set_defaults( $type );
+  node_type_save( $type );
+
+  //Add the extra fields to the content type
+  _fluginfo_add_fields_to_bundle("field_flugvollur", "text", $type_name,
+    "Flugvöllur", "Flugvöllur", "textfield");
+  _fluginfo_add_fields_to_bundle("field_flugtimar_fra", "datestamp", $type_name,
+    "Flugtímar frá klukkan", "Flugtímar(tími)", "date_select");
+  _fluginfo_add_fields_to_bundle("field_brottfararupplysingar", "text_long", $type_name,
+    "Brottfararupplýsingar", "Brottfararupplýsingar", "text_textarea");
+  _fluginfo_add_fields_to_bundle("field_gildur_brottftimi", "list_boolean", $type_name,
+    "Staðfestir hvort gildir brottfaratímar hafi komið við síðustu athugun",
+    "Gildir brottfarartímar","options_onoff", [0 => 'Ógildur tími',1 => 'Gildur tími']);
+  _fluginfo_add_fields_to_bundle("field_komuupplysingar", "text_long", $type_name,
+    "Komuupplýsingar", "Komuupplýsingar", "text_textarea");
+  _fluginfo_add_fields_to_bundle("field_gildur_komutimi", "list_boolean", $type_name,
+    "Staðfestir hvort gildir komutímar hafi komið við síðustu athugun",
+    "Gildir komutímar","options_onoff", [0 => 'Ógildur tími',1 => 'Gildur tími']);
+  _fluginfo_add_fields_to_bundle("field_lengd_decimal", "text", $type_name,
+    "Lengdarstaðsetning (í decimal)", "Lengd (Decimal)", "textfield");
+  _fluginfo_add_fields_to_bundle("field_breidd_decimal", "text", $type_name,
+    "Breiddarstaðsetning (í decimal)", "Breidd (Decimal)", "textfield");
+}
+
+
+function _fluginfo_remove_content_type(array $type_name){
+  foreach($type_name as $type){
+    if (in_array($type, array_keys(node_type_get_names()))) {
+      node_type_delete($type_name);
+    }
+  }
+}
+
+/**
+ * Created a function for this code, since I have to use it multiple times.
+ *
+ * It took a long time to find the correct place to run the allowed values code,
+ * since that setting is not within the instance, but within the field creation
+ * itself.
+ *
+ * @param $field_machine_name
+ * @param $field_type
+ * @param $bundle
+ * @param $field_description
+ * @param $field_label
+ * @param $widget
+ * @param null $allowed_values
+ * @throws \Exception
+ * @throws \FieldException
+ */
+function _fluginfo_add_fields_to_bundle(
+  $field_machine_name, $field_type, $bundle, $field_description, $field_label,
+  $widget, $allowed_values = null
+){
+  //  The machine name of the field can contain only lowercase alphanumeric characters and underscores.
+  $field_name = $field_machine_name;
+
+  //  Verify the field does not already exist.
+  if ( !field_info_field( $field_name ) ) {
+    //  Create the field definition array.
+    $field = array(
+      'field_name' => $field_name,
+      'type' => $field_type,
+    );
+
+    if($allowed_values){
+      $field['settings'] = ['allowed_values' => $allowed_values];
+    }
+    //  Create the field.
+    $field = field_create_field( $field );
+  }
+  else{
+    $field = field_info_field($field_name);
+  }
+
+  //  Create the field instance definition array.
+  $instance = array(
+    'field_name' => $field[ 'field_name' ],
+    'entity_type' => 'node',
+    'bundle' => $bundle,
+    'description' => $field_description,
+    'label' => $field_label,
+    'widget' => array(
+      'type' => $widget,
+    ),
+  );
+
+//  Create an instance of the field and bind it to the bundle.
+  field_create_instance($instance);
+}
