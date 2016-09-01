@@ -6,68 +6,233 @@
  * Time: 11:59
  */
 
+/**
+ * Implements hook_menu()
+ *
+ * @return mixed
+ */
 function fluginfo_menu(){
-  $items['vedurspa/flug/keflavik/koma'] = [
-    'title' => 'Komutímar flugs á Keflavíkurflugvelli',
-    'description' => t('Displays arrival times at Keflavik airport'),
-    'page callback' => 'fluginfo_kef_airport_arrivals',
-    'access callback' => 'user_access',
-    'access arguments' => array('access content'),
-    'type' => MENU_CALLBACK,
-  ];
-
-  $items['vedurspa/flug/keflavik/brottfor'] = [
-    'title' => 'Brottfarartímar flugs á Keflavíkurflugvelli',
-    'description' => t('Displays departure times at Keflavik airport'),
-    'page callback' => 'fluginfo_kef_airport_departure',
-    'access callback' => 'user_access',
-    'access arguments' => array('access content'),
-    'type' => MENU_CALLBACK,
-  ];
-
-  $items['vedurspa/flug/innanlands/brottfor'] = [
-    'title' => 'Brottfarartímar flugs á hinum ýmsu innanlandsvöllum',
-    'description' => t('Displays departure times at domestic airports in Iceland'),
-    'page callback' => 'fluginfo_kef_airport_departure',
-    'access callback' => 'user_access',
-    'access arguments' => array('access content'),
-    'type' => MENU_CALLBACK,
-  ];
+  $items['admin/config/services/fluginfo'] = array(
+    'title' => 'Flugupplýsingar',
+    'description' => 'Stillingar sem tilheyra flugupplýsingum.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fluginfo_admin'),
+    'access arguments' => array('administer fluginfo settings'),
+    'type' => MENU_NORMAL_ITEM,
+  );
 
   return $items;
 }
 
-function fluginfo_kef_airport_arrivals(){
-  $airport = _fluginfo_get_airport_info('KEF');
-  $arrival_info = json_decode($airport->field_komuupplysingar[LANGUAGE_NONE][0]['value']);
-
-  $table = _fluginfo_create_arrival_table_from_flight_info($arrival_info);
-
-  $build = [
-    'table' => [
-      '#type' => 'markup',
-      '#markup' => $table
-    ]
+/**
+ * Implements hook_block_info
+ *
+ * @return mixed
+ */
+function fluginfo_block_info(){
+  $blocks['intern-dep-full'] = [
+    'info' => t('International departures (KEF - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
   ];
 
-  return $build;
-}
-
-function fluginfo_kef_airport_departure(){
-  $airport = _fluginfo_get_airport_info('KEF');
-  $departure_info = json_decode($airport->field_brottfararupplysingar[LANGUAGE_NONE][0]['value']);
-
-  $table = _fluginfo_create_departure_table_from_flight_info($departure_info);
-
-  $build = [
-    'table' => [
-      '#type' => 'markup',
-      '#markup' => $table
-    ]
+  $blocks['intern-arr-full'] = [
+    'info' => t('International arrivals (KEF - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
   ];
 
-  return $build;
+  $blocks['dom-airice-dep-full'] = [
+    'info' => t('Domestic departures (REK Air Iceland - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
+  ];
+
+  $blocks['dom-airice-arr-full'] = [
+    'info' => t('Domestic arrivals (REK Air Iceland - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
+  ];
+
+  $blocks['dom-ernir-dep-full'] = [
+    'info' => t('Domestic departures (REK Eagle Air - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
+  ];
+
+  $blocks['dom-ernir-arr-full'] = [
+    'info' => t('Domestic arrivals (REK Eagle Air - FULL)'),
+    'cache' => DRUPAL_NO_CACHE,
+  ];
+
+  return $blocks;
 }
+
+/**
+ * Implements hook_block_view()
+ *
+ * @param string $delta
+ * @return mixed
+ */
+function fluginfo_block_view($delta = '') {
+  $output = '';
+  if ($delta == 'intern-arr-full') {
+    $output = _fluginfo_create_international_html('arrivals');
+  }
+  else if ($delta == 'intern-dep-full') {
+    $output = _fluginfo_create_international_html('departures');
+  }
+  else if ($delta == 'dom-airice-arr-full'){
+    $output = _fluginfo_create_domestic_airiceland_html('arrivals');
+  }
+  else if($delta == 'dom-airice-dep-full'){
+    $output = _fluginfo_create_domestic_airiceland_html('departures');
+  }
+
+  $block['content'] = $output;
+
+  return $block;
+}
+
+/**
+ * Creates admin form for the settings for the block
+ *
+ * @return mixed Rendered form
+ */
+function fluginfo_admin(){
+  $form['webservices'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Web services',
+  ];
+
+  $form['webservices']['airiceland'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Air Iceland',
+  ];
+
+  $form['webservices']['airiceland']['departure'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Departure',
+  ];
+
+  $form['webservices']['airiceland']['arrival'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Arrival',
+  ];
+
+  $form['webservices']['international'] = [
+    '#type' => 'fieldset',
+    '#title' => 'International',
+  ];
+
+  $form['webservices']['airiceland']['departure']['fluginfo_block_airiceland_departure_service'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Path to Air Iceland departure web services'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_departure_service',
+      'http://flights.flugfelag.is/origo-portlets/rmdomestic/domesticservices/departures.xml?RequestType=departures'),
+    '#required' => TRUE,
+    '#size' => 150,
+    '#maxlength' => 255,
+  ];
+
+  $form['webservices']['airiceland']['departure']['fluginfo_block_airiceland_departure_airports'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Path to Air Iceland departure web services'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_departure_airports',
+      'RKV_AEY_VPN_IFJ_GRY_VEY_EGS_THO'),
+    '#required' => TRUE,
+  ];
+
+  $form['webservices']['airiceland']['fluginfo_block_airiceland_gap_before'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('How many past hrs?'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_gap_before',
+      '3'),
+    '#required' => TRUE,
+  ];
+
+  $form['webservices']['airiceland']['fluginfo_block_airiceland_gap_after'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('How many hrs into the future?'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_gap_after',
+      '10'),
+    '#required' => TRUE,
+  ];
+
+  $form['webservices']['airiceland']['fluginfo_block_airiceland_locale'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Locale'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_locale',
+      'is'),
+    '#required' => TRUE,
+  ];
+
+  $form['webservices']['airiceland']['arrival']['fluginfo_block_airiceland_arrivals_service'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Arrivals web services'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_arrivals_service',
+      'http://flights.flugfelag.is/origo-portlets/rmdomestic/domesticservices/arrivals.xml?RequestType=arrivals'),
+    '#required' => TRUE,
+    '#size' => 150,
+    '#maxlength' => 255,
+  ];
+  $form['webservices']['airiceland']['arrival']['fluginfo_block_airiceland_arrival_airports'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Arrival airports'),
+    '#default_value' => variable_get('fluginfo_block_airiceland_arrival_airports',
+      'RKV_AEY_VPN_IFJ_GRY_VEY_EGS_THO'),
+    '#required' => TRUE,
+  ];
+
+  $form['webservices']['international']['fluginfo_block_international_service'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Path to International flighs web services'),
+    '#default_value' => variable_get('fluginfo_block_international_service',
+      'http://apis.is/flight'),
+    '#required' => TRUE,
+    '#size' => 150,
+    '#maxlength' => 255,
+  ];
+  $form['webservices']['international']['fluginfo_block_international_locale'] = [
+    '#type' => 'textfield',
+    '#title' =>  t('Locale'),
+    '#default_value' => variable_get('fluginfo_block_international_locale',
+      'is'),
+    '#required' => TRUE,
+  ];
+
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_block_save()
+ */
+function fluginfo_admin_save($delta = '', $edit = []){
+  variable_set('fluginfo_block_airiceland_departure_service',
+    $edit['fluginfo_block_airiceland_departure_service']
+  );
+  variable_set('fluginfo_block_airiceland_arrivals_service',
+    $edit['fluginfo_block_airiceland_arrivals_service']
+  );
+  variable_set('fluginfo_block_airiceland_departure_airports',
+    $edit['fluginfo_block_airiceland_departure_airports']
+  );
+  variable_set('fluginfo_block_airiceland_arrival_airports',
+    $edit['fluginfo_block_airiceland_arrival_airports']
+  );
+  variable_set('fluginfo_block_airiceland_gap_before',
+    $edit['fluginfo_block_airiceland_gap_before']
+  );
+  variable_set('fluginfo_block_airiceland_gap_after',
+    $edit['fluginfo_block_airiceland_gap_after']
+  );
+  variable_set('fluginfo_block_airiceland_locale',
+    $edit['fluginfo_block_airiceland_locale']
+  );
+  variable_set('fluginfo_block_international_service',
+    $edit['fluginfo_block_international_service']
+  );
+  variable_set('fluginfo_block_international_locale',
+    $edit['fluginfo_block_international_locale']
+  );
+}
+
+
 
 /** ////////////////////////////////////////////
  *  HELPER FUNCTIONS
@@ -84,16 +249,21 @@ function fluginfo_kef_airport_departure(){
 function _fluginfo_create_arrival_table_from_flight_info($info){
   $header = ['Flugfélag', 'Flugnúmer', 'Frá', 'Áætlun', 'Rauntími'];
   foreach($info->results as $item){
-    $rows[] = [
-      'data' => [
-        '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
-        $item->flightNumber,
-        $item->from,
-        $item->plannedArrival,
-        $item->realArrival
-      ],
-      'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
-    ];
+    $time = time();
+    $arrival_time = strtotime(strftime('%Y-%m-%d ' . substr($item->realArrival, -5)));
+    $subtraction = $time - $arrival_time;
+    if( $subtraction < (60 * 60) || strlen($item->realArrival) == 0){
+      $rows[] = [
+        'data' => [
+          '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
+          $item->flightNumber,
+          $item->from,
+          $item->plannedArrival,
+          $item->realArrival
+        ],
+        'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
+      ];
+    }
   }
 
   return theme('table', array('header' => $header, 'rows' => $rows));
@@ -109,25 +279,49 @@ function _fluginfo_create_arrival_table_from_flight_info($info){
 function _fluginfo_create_departure_table_from_flight_info($info){
   $header = ['Flugfélag', 'Flugnúmer', 'Til', 'Áætlun', 'Rauntími'];
   foreach($info->results as $item){
-    $rows[] = [
-      'data' => [
-        '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
-        $item->flightNumber,
-        $item->to,
-        $item->plannedArrival,
-        $item->realArrival
-      ],
-      'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
-    ];
+    $time = time();
+    $time_string = (strlen($item->realArrival) > 5)
+      ? substr($item->realArrival, -5)
+      : $item->realArrival;
+    $departure_time = strtotime(strftime('%Y-%m-%d ' . $time_string));
+    $subtraction = $time - $departure_time;
+    if( $subtraction < (60 * 60) || (!$departure_time || (!$time_string))){
+      $rows[] = [
+        'data' => [
+          '<span class="' . _fluginfo_classify_airline_name($item->airline) . '">' . $item->airline . '</span>',
+          $item->flightNumber,
+          $item->to,
+          $item->plannedArrival,
+          $item->realArrival
+        ],
+        'class' => _fluginfo_classify_time($item->plannedArrival, $item->realArrival)
+      ];
+    }
   }
 
   return theme('table', array('header' => $header, 'rows' => $rows));
 }
 
+/**
+ * Takes a string (name of an airline) and transliterate it, so it can be used
+ * in a class name
+ *
+ * @param $name
+ * @return mixed
+ */
 function _fluginfo_classify_airline_name($name){
   return str_replace( ['(', ')', '.'], '', (str_replace( [' '], '_', strtolower($name))));
 }
 
+/**
+ * Uses the two times given to determine if the flight is on time or delayed.
+ * Also reads other info like Go to gate, gate closing etc.  Returns a
+ * transliterated string, used for css classes
+ *
+ * @param $planned_arrival
+ * @param $real_arrival
+ * @return array
+ */
 function _fluginfo_classify_time($planned_arrival, $real_arrival){
   $class = [];
   if(!$real_arrival){
@@ -180,6 +374,73 @@ function _fluginfo_classify_time($planned_arrival, $real_arrival){
 }
 
 /**
+ * Creates HTML for international flights.
+ *
+ * @param $arr_dep string Indicates if we are requesting arrivals or departures
+ * markup
+ * @param null $number
+ * @return string
+ */
+function _fluginfo_create_international_html($arr_dep = 'arrivals', $number = null){
+  $output = "<h2>Keflavíkurflugvöllur - Komur</h2>";
+  $airport = _fluginfo_get_airport_info('KEF');
+  if($arr_dep == 'arrivals'){
+    $arrival_info = json_decode($airport->field_komuupplysingar[LANGUAGE_NONE][0]['value']);
+    $table = _fluginfo_create_arrival_table_from_flight_info($arrival_info);
+  }
+  else{
+    $departure_info = json_decode($airport->field_brottfararupplysingar[LANGUAGE_NONE][0]['value']);
+    $table = _fluginfo_create_departure_table_from_flight_info($departure_info);
+  }
+
+  $build = [
+    'table' => [
+      '#type' => 'markup',
+      '#markup' => $table
+    ]
+  ];
+  $output .= render($build);
+
+  return $output;
+}
+
+/**
+ * Creates HTML for all Air Iceland flights.
+ *
+ * @param string $dep_arr
+ * @param null $number
+ * @return string
+ */
+function _fluginfo_create_domestic_airiceland_html($dep_arr = 'arrivals', $number = null){
+  $airports = _fluginfo_get_all_domestic_airport_info();
+  $output = "";
+  foreach($airports as $airport){
+    $output .= "<div class='airport-info'>";
+    if($dep_arr == 'arrivals'){
+      $output .= "<h2>{$airport->title} - Komur </h2>";
+      $arrival_info = json_decode($airport->field_komuupplysingar[LANGUAGE_NONE][0]['value']);
+      $table = _fluginfo_create_arrival_table_from_flight_info($arrival_info);
+    }
+    else{
+      $output .= "<h2>{$airport->title} - Brottfarir </h2>";
+      $arrival_info = json_decode($airport->field_brottfararupplysingar[LANGUAGE_NONE][0]['value']);
+      $table = _fluginfo_create_departure_table_from_flight_info($arrival_info);
+    }
+
+    $build = [
+      'table' => [
+        '#type' => 'markup',
+        '#markup' => $table
+      ]
+    ];
+    $output .= render($build);
+    $output .= "</div>";
+  }
+
+  return $output;
+}
+
+/**
  * Finds an airport, based on it's airport code
  *
  * @param $airport_code
@@ -199,6 +460,28 @@ function _fluginfo_get_airport_info($airport_code){
     $results = entity_load('node', array_keys($result['node']));
     $results = array_values($results);
     $results = $results[0];
+  }
+
+  return $results;
+}
+
+/**
+ * Finds all domestic airports
+ *
+ * @return stdClass|null
+ */
+function _fluginfo_get_all_domestic_airport_info(){
+  $results = null;
+  $query = new EntityFieldQuery;
+  $result = $query
+    ->entityCondition('entity_type', 'node')
+    ->propertyCondition('type', 'flugupplysingar')
+    ->propertyCondition('status', 1, '=')
+    ->fieldCondition('field_flugvollur', 'value', 'KEF', '!=')
+    ->execute();
+
+  if (!empty($result['node'])) {
+    $results = entity_load('node', array_keys($result['node']));
   }
 
   return $results;

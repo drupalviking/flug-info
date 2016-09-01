@@ -37,10 +37,11 @@ function drush_fluginfo_temp(){
  * @return array|null|\stdClass
  */
 function drush_fluginfo_fetch_international_flights(){
-  $string = "http://apis.is/flight?language=is&type=";
+  $string = variable_get('fluginfo_block_international_service') .
+    '?language=' . variable_get('fluginfo_block_international_locale');
 
-  $departures_json = file_get_contents($string . "departures");
-  $arrivals_json = file_get_contents($string . "arrivals");
+  $departures_json = file_get_contents($string . "&type=departures");
+  $arrivals_json = file_get_contents($string . "&type=arrivals");
   $node = _fluginfo_get_airport_info('KEF');
 
   if(!$node){
@@ -57,10 +58,20 @@ function drush_fluginfo_fetch_international_flights(){
  * Fetches two XML feeds from Air Iceland (departure and arrivals).  Encodes them
  * into json and sends them for further processing.  Finally it adds the data
  * to Flugvallauppýsingar node.
+ *
+ * Config to the request strings is under /admin/config/services/flightinfo
  */
 function drush_fluginfo_fetch_airiceland_flights(){
-  $arrival_string = "http://flights.flugfelag.is/origo-portlets/rmdomestic/domesticservices/arrivals.xml?RequestType=arrivals&Arrival=RKV_AEY_VPN_IFJ_GRY_VEY_EGS_THO&GapBefore=3&GapAfter=10&locale=is";
-  $departure_string = "http://flights.flugfelag.is/origo-portlets/rmdomestic/domesticservices/departures.xml?RequestType=departures&Departure=RKV_AEY_VPN_IFJ_GRY_VEY_EGS_THO&GapBefore=3&GapAfter=10&locale=is";
+  $arrival_string = variable_get('fluginfo_block_airiceland_arrivals_service') .
+    '?RequestType=arrivals&Arrival=' . variable_get('fluginfo_block_airiceland_arrival_airports') .
+    '&GapBefore=' . variable_get('fluginfo_block_airiceland_gap_before') .
+    '&GapAfter=' . variable_get('fluginfo_block_airiceland_gap_after') .
+    '&locale=' . variable_get('fluginfo_block_airiceland_locale');
+  $departure_string = variable_get('fluginfo_block_airiceland_departure_service') .
+    '?RequestType=departures&Departure=' . variable_get('fluginfo_block_airiceland_departure_airports') .
+    '&GapBefore=' . variable_get('fluginfo_block_airiceland_gap_before') .
+    '&GapAfter=' . variable_get('fluginfo_block_airiceland_gap_after') .
+    '&locale=' . variable_get('fluginfo_block_airiceland_locale');
 
   $arrival_xml = simplexml_load_file($arrival_string);
   $departure_xml = simplexml_load_file($departure_string);
@@ -100,14 +111,18 @@ function _fluginfo_process_airiceland_json($json, $arr_dep){
       }
       foreach($destination->flights->flight as $flight){
         $flight_info = new stdClass();
-        $flight_info->flight_number = $flight->flight_number;
+        $flight_info->flightNumber = $flight->flight_number;
         $flight_info->airline = _fluginfo_extract_airline($flight->flight_number);
         if($arr_dep == 'arrival'){
           $time = strtotime($flight->arrival->scheduled);
           $flight_info->date = strftime('%d.%m', $time);
-          $flight_info->destination = $flight->departure->airport;
+          $flight_info->from = $flight->departure->airport;
           if($flight->arrival->estimate != 'N/A'){
             $flight_info->plannedArrival = $flight->arrival->estimate;
+          }
+          else{
+            $scheduled_time = substr($flight->arrival->scheduled, -5);
+            $flight_info->plannedArrival = $scheduled_time;
           }
           if($flight->arrival->actual != 'N/A'){
             $flight_info->realArrival = $flight->arrival->actual;
@@ -119,12 +134,16 @@ function _fluginfo_process_airiceland_json($json, $arr_dep){
         else{
           $time = strtotime($flight->departure->scheduled);
           $flight_info->date = strftime('%d.%m', $time);
-          $flight_info->destination = $flight->arrival->airport;
+          $flight_info->to = $flight->arrival->airport;
 
-          if($flight->arrival->estimate != 'N/A'){
+          if($flight->departure->estimate != 'N/A'){
             $flight_info->plannedArrival = $flight->departure->estimate;
           }
-          if($flight->arrival->actual != 'N/A'){
+          else{
+            $scheduled_time = substr($flight->departure->scheduled, -5);
+            $flight_info->plannedArrival = $scheduled_time;
+          }
+          if($flight->departure->actual != 'N/A'){
             $flight_info->realArrival = $flight->departure->actual;
           }
           else{
@@ -181,6 +200,9 @@ function _fluginfo_extract_airline($flight_number){
       break;
     case 'FN' :
       return 'Norlandair';
+      break;
+    case 'RC' :
+      return 'Atlantic Airways';
       break;
     default :
       return 'Unknown';
